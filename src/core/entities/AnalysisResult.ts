@@ -22,7 +22,8 @@ export interface AnalysisFinding {
 
 /**
  * Resultado agregado de analizar un archivo o directorio: hallazgos por
- * unidad de código más un resumen generado por el LLM.
+ * unidad de código más un resumen (agregado localmente a partir de los
+ * hallazgos, sin una llamada extra al LLM).
  */
 export interface AnalysisResult {
   targetPath: string;

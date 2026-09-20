@@ -1,4 +1,4 @@
-import type { CodeUnit } from '../../core/entities/CodeUnit.js';
+import type { CodeUnit } from '../entities/CodeUnit.js';
 
 export interface CodeChunk {
   units: CodeUnit[];

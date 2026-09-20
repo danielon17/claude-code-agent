@@ -86,4 +86,34 @@ describe('TsCompilerParser', () => {
       expect(units).toHaveLength(0);
     });
   });
+
+  describe('parse (dispatch archivo/directorio)', () => {
+    let dir: string;
+
+    beforeEach(async () => {
+      dir = await mkdtemp(path.join(tmpdir(), 'ts-compiler-parser-dispatch-'));
+      await writeFile(path.join(dir, 'a.ts'), 'export function fromA(): void {}\n');
+    });
+
+    afterEach(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    it('delega en parseFile si la ruta es un archivo', async () => {
+      const parser = new TsCompilerParser();
+      const units = await parser.parse(FIXTURE_PATH);
+      expect(units.map((u) => u.name).sort()).toEqual(['Calculator', 'Calculator.add', 'Id', 'Point', 'add', 'multiply']);
+    });
+
+    it('delega en parseDirectory si la ruta es un directorio', async () => {
+      const parser = new TsCompilerParser();
+      const units = await parser.parse(dir);
+      expect(units.map((u) => u.name)).toEqual(['fromA']);
+    });
+
+    it('lanza ParsingError si la ruta no existe', async () => {
+      const parser = new TsCompilerParser();
+      await expect(parser.parse('/ruta/que/no/existe')).rejects.toBeInstanceOf(ParsingError);
+    });
+  });
 });

@@ -14,4 +14,6 @@ export interface ParseOptions {
 export interface CodeParser {
   parseFile(filePath: string): Promise<CodeUnit[]>;
   parseDirectory(dirPath: string, options?: ParseOptions): Promise<CodeUnit[]>;
+  /** Detecta si `targetPath` es un archivo o un directorio y delega en `parseFile`/`parseDirectory`. */
+  parse(targetPath: string, options?: ParseOptions): Promise<CodeUnit[]>;
 }

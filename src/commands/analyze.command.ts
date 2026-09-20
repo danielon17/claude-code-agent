@@ -1,9 +1,7 @@
-import { stat } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { createContainer, type AppContainer } from '../container.js';
 import { isAppError } from '../shared/errors.js';
-import { chunkCodeUnits } from '../infrastructure/parsing/AstChunker.js';
-import type { CodeUnitKind } from '../core/entities/CodeUnit.js';
+import { AnalyzeCodebaseUseCase } from '../core/use-cases/AnalyzeCodebase.usecase.js';
 
 export interface AnalyzeCliOptions {
   format: 'text' | 'json' | 'markdown';
@@ -13,56 +11,60 @@ export interface AnalyzeCliOptions {
   maxTokens: string;
 }
 
-type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'parser'>;
+type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'createLlmClient'>;
 
 /**
  * Lógica del subcomando `analyze`, separada del registro en Commander para
  * poder testearla de forma aislada inyectando un container de prueba.
  *
- * La extracción de `CodeUnit[]` y el chunking por presupuesto de tokens ya
- * están implementados (paso 2 del roadmap); el análisis semántico vía
- * `AnalyzeCodebaseUseCase` + `AnthropicClient` con streaming llega en el
- * paso 3, así que por ahora este comando muestra qué se enviaría al modelo.
+ * Orquesta `AnalyzeCodebaseUseCase` (parseo AST -> chunking -> análisis
+ * semántico vía Claude con streaming) y pinta los tokens de la respuesta
+ * en tiempo real a medida que llegan. `--format json|markdown` y
+ * `--output` quedan pendientes para el paso de formatters del roadmap;
+ * por ahora la salida es siempre texto en la terminal.
  */
 export async function runAnalyzeCommand(
   target: string,
   options: AnalyzeCliOptions,
-  { logger, parser }: AnalyzeCommandDeps,
+  { logger, parser, createLlmClient }: AnalyzeCommandDeps,
 ): Promise<void> {
   try {
-    logger.info({ target, options }, 'Iniciando análisis');
-
     const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
     if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
       throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
     }
-
-    const targetStat = await stat(target);
-    const units = targetStat.isDirectory()
-      ? await parser.parseDirectory(target, {
-          includePatterns: options.include,
-          excludePatterns: options.exclude,
-        })
-      : await parser.parseFile(target);
-
-    const chunks = chunkCodeUnits(units, { maxTokensPerChunk });
-    const byKind = units.reduce<Record<string, number>>((acc, unit) => {
-      acc[unit.kind] = (acc[unit.kind] ?? 0) + 1;
-      return acc;
-    }, {});
-    const totalTokens = units.reduce((sum, unit) => sum + unit.estimatedTokens, 0);
-
-    logger.info(
-      { unitsFound: units.length, byKind, chunks: chunks.length, totalTokens },
-      `AST extraído: ${units.length} unidades de código en ${chunks.length} chunk(s) (~${totalTokens} tokens).`,
-    );
-    for (const [kind, count] of Object.entries(byKind) as Array<[CodeUnitKind, number]>) {
-      logger.info(`  ${kind}: ${count}`);
+    if (options.format !== 'text') {
+      logger.warn(`--format ${options.format} aún no está implementado (llega con los formatters); usando texto.`);
+    }
+    if (options.output) {
+      logger.warn(`--output aún no está implementado (llega con los formatters); imprimiendo en stdout.`);
     }
 
-    logger.warn(
-      'Análisis semántico vía Claude aún no implementado (AnalyzeCodebaseUseCase) — próximo paso del roadmap. Arriba se muestra el resultado real del parsing + chunking.',
-    );
+    const useCase = new AnalyzeCodebaseUseCase(parser, createLlmClient());
+
+    logger.info({ target }, 'Iniciando análisis semántico con Claude');
+
+    const result = await useCase.execute({
+      targetPath: target,
+      includePatterns: options.include,
+      excludePatterns: options.exclude,
+      maxTokensPerChunk,
+      onProgress: (message) => logger.info(message),
+      onToken: (text) => process.stdout.write(text),
+    });
+
+    if (result.findings.length > 0) {
+      process.stdout.write('\n\n');
+    }
+
+    logger.info({ unitsAnalyzed: result.unitsAnalyzed, findings: result.findings.length }, result.summary);
+    for (const finding of result.findings) {
+      const location = `${finding.location.filePath}:${finding.location.startLine}`;
+      logger.warn(`[${finding.severity}] [${finding.category}] ${location} — ${finding.message}`);
+      if (finding.suggestion) {
+        logger.info(`  sugerencia: ${finding.suggestion}`);
+      }
+    }
   } catch (error) {
     if (isAppError(error)) {
       logger.error({ code: error.code, err: error }, error.message);

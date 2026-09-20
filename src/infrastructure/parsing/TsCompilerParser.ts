@@ -25,6 +25,16 @@ const DEFAULT_MAX_FILE_SIZE_BYTES = 1_000_000;
  * método, clase, interfaz, type alias o función flecha exportable.
  */
 export class TsCompilerParser implements CodeParser {
+  async parse(targetPath: string, options: ParseOptions = {}): Promise<CodeUnit[]> {
+    let targetStat: Awaited<ReturnType<typeof stat>>;
+    try {
+      targetStat = await stat(targetPath);
+    } catch (error) {
+      throw new ParsingError(`No se pudo acceder a la ruta: ${path.resolve(targetPath)}`, error);
+    }
+    return targetStat.isDirectory() ? this.parseDirectory(targetPath, options) : this.parseFile(targetPath);
+  }
+
   async parseFile(filePath: string): Promise<CodeUnit[]> {
     const absolutePath = path.resolve(filePath);
     let sourceText: string;

@@ -5,11 +5,11 @@ parsing estático (TypeScript Compiler API) con análisis semántico vía la
 API de Claude para detectar problemas de calidad, generar parches de
 refactorización aplicables y crear tests unitarios automáticamente.
 
-> Estado: arquitectura, CLI y contratos (puertos/entidades) completos; el
-> parser real (`TsCompilerParser` + `AstChunker`) ya extrae y agrupa
-> unidades de código de un repositorio TypeScript real. El cliente de
-> Claude, el diff y los formatters se implementan paso a paso — ver
-> [Roadmap](#roadmap).
+> Estado: `code-agent analyze <target>` ya funciona end-to-end contra la
+> API real de Claude con streaming en tiempo real: parsea el AST, arma
+> chunks por presupuesto de tokens, y cada chunk se analiza semánticamente
+> con Claude devolviendo hallazgos tipados. El diff aplicable y la
+> generación de tests se implementan paso a paso — ver [Roadmap](#roadmap).
 
 ## Arquitectura
 
@@ -36,13 +36,16 @@ src/
 │   │   ├── LlmClient.port.ts       # Streaming + tokens
 │   │   ├── OutputFormatter.port.ts
 │   │   └── FileSystem.port.ts
+│   ├── services/                   # Lógica de dominio pura (sin I/O)
+│   │   ├── AstChunker.ts           # Chunking de CodeUnit[] por presupuesto de tokens
+│   │   └── PromptTemplates.ts      # Prompts + parseo/validación estricta de la respuesta del LLM
 │   └── use-cases/
-│       ├── AnalyzeCodebase.usecase.ts
+│       ├── AnalyzeCodebase.usecase.ts  # Implementado: parseo -> chunking -> streaming -> hallazgos
 │       ├── RefactorCode.usecase.ts
 │       └── GenerateTests.usecase.ts
 ├── infrastructure/                 # Adaptadores (implementaciones concretas)
-│   ├── parsing/                    # TsCompilerParser, AstChunker, TokenEstimator
-│   ├── llm/                        # AnthropicClient, PromptTemplates, ContextWindowManager
+│   ├── parsing/                    # TsCompilerParser, TokenEstimator
+│   ├── llm/                        # AnthropicClient (streaming real sobre @anthropic-ai/sdk)
 │   ├── diff/                       # DiffGenerator (unified diff / apply)
 │   ├── testgen/                    # VitestTestWriter
 │   ├── formatters/                 # Terminal, JSON, Markdown
@@ -92,7 +95,7 @@ Todos aceptan `--log-level` a nivel global.
 
 1. ✅ Estructura del proyecto, arquitectura hexagonal, CLI cableado con los 3 subcomandos.
 2. ✅ `TsCompilerParser` + `AstChunker`: extracción real de `CodeUnit[]` (funciones, métodos, clases, interfaces, type aliases, arrow functions) vía TypeScript Compiler API, con detección de dependencias y chunking por presupuesto de tokens. `code-agent analyze <target>` ya reporta unidades y chunks reales.
-3. ⏳ `AnthropicClient` con streaming real hacia Claude y `AnalyzeCodebaseUseCase` completo.
+3. ✅ `AnthropicClient` (streaming real sobre `@anthropic-ai/sdk`) + `AnalyzeCodebaseUseCase` completo: cada chunk se envía a Claude, los tokens se pintan en la terminal a medida que llegan, y la respuesta JSON se valida estrictamente (zod) y se mapea a `AnalysisFinding[]`.
 4. ⏳ `DiffGenerator` + `RefactorCodeUseCase`: generación y aplicación de parches `.diff`.
 5. ⏳ `VitestTestWriter` + `GenerateTestsUseCase`: generación automática de tests.
 6. ⏳ Formatters (`TerminalFormatter`, `JsonFormatter`, `MarkdownFormatter`) y cobertura de tests ≥80%.

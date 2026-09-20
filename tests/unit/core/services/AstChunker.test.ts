@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkCodeUnits } from '../../../../src/infrastructure/parsing/AstChunker.js';
+import { chunkCodeUnits } from '../../../../src/core/services/AstChunker.js';
 import type { CodeUnit } from '../../../../src/core/entities/CodeUnit.js';
 
 function makeUnit(name: string, estimatedTokens: number): CodeUnit {
