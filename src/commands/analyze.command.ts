@@ -2,46 +2,41 @@ import type { Command } from 'commander';
 import { createContainer, type AppContainer } from '../container.js';
 import { isAppError } from '../shared/errors.js';
 import { AnalyzeCodebaseUseCase } from '../core/use-cases/AnalyzeCodebase.usecase.js';
+import { createFormatter } from '../infrastructure/formatters/createFormatter.js';
+import type { OutputFormat } from '../core/ports/OutputFormatter.port.js';
 
 export interface AnalyzeCliOptions {
-  format: 'text' | 'json' | 'markdown';
+  format: OutputFormat;
   output?: string;
   include?: string[];
   exclude?: string[];
   maxTokens: string;
 }
 
-type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'createLlmClient'>;
+type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSystem' | 'createLlmClient'>;
 
 /**
  * Lógica del subcomando `analyze`, separada del registro en Commander para
  * poder testearla de forma aislada inyectando un container de prueba.
  *
  * Orquesta `AnalyzeCodebaseUseCase` (parseo AST -> chunking -> análisis
- * semántico vía Claude con streaming) y pinta los tokens de la respuesta
- * en tiempo real a medida que llegan. `--format json|markdown` y
- * `--output` quedan pendientes para el paso de formatters del roadmap;
- * por ahora la salida es siempre texto en la terminal.
+ * semántico vía Claude con streaming), pintando los tokens de la respuesta
+ * en tiempo real, y al finalizar formatea el resultado con el
+ * `OutputFormatter` correspondiente a `--format` (imprimiéndolo en stdout
+ * o guardándolo en `--output`).
  */
 export async function runAnalyzeCommand(
   target: string,
   options: AnalyzeCliOptions,
-  { logger, parser, createLlmClient }: AnalyzeCommandDeps,
+  { logger, parser, fileSystem, createLlmClient }: AnalyzeCommandDeps,
 ): Promise<void> {
   try {
     const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
     if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
       throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
     }
-    if (options.format !== 'text') {
-      logger.warn(`--format ${options.format} aún no está implementado (llega con los formatters); usando texto.`);
-    }
-    if (options.output) {
-      logger.warn(`--output aún no está implementado (llega con los formatters); imprimiendo en stdout.`);
-    }
 
     const useCase = new AnalyzeCodebaseUseCase(parser, createLlmClient());
-
     logger.info({ target }, 'Iniciando análisis semántico con Claude');
 
     const result = await useCase.execute({
@@ -50,20 +45,18 @@ export async function runAnalyzeCommand(
       excludePatterns: options.exclude,
       maxTokensPerChunk,
       onProgress: (message) => logger.info(message),
-      onToken: (text) => process.stdout.write(text),
+      // Solo pintamos tokens crudos en vivo cuando el formato final es texto:
+      // con json/markdown, stdout debe quedar limpio para el resultado formateado.
+      onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
     });
 
-    if (result.findings.length > 0) {
-      process.stdout.write('\n\n');
-    }
-
-    logger.info({ unitsAnalyzed: result.unitsAnalyzed, findings: result.findings.length }, result.summary);
-    for (const finding of result.findings) {
-      const location = `${finding.location.filePath}:${finding.location.startLine}`;
-      logger.warn(`[${finding.severity}] [${finding.category}] ${location} — ${finding.message}`);
-      if (finding.suggestion) {
-        logger.info(`  sugerencia: ${finding.suggestion}`);
-      }
+    const formatted = createFormatter(options.format).formatAnalysis(result);
+    if (options.output) {
+      await fileSystem.writeFile(options.output, formatted);
+      logger.info(`Resultado guardado en ${options.output}`);
+    } else {
+      const separator = options.format === 'text' ? '\n\n' : '';
+      process.stdout.write(`${separator}${formatted}\n`);
     }
   } catch (error) {
     if (isAppError(error)) {

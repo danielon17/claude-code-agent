@@ -2,10 +2,12 @@ import type { Command } from 'commander';
 import { createContainer, type AppContainer } from '../container.js';
 import { isAppError } from '../shared/errors.js';
 import { RefactorCodeUseCase } from '../core/use-cases/RefactorCode.usecase.js';
+import { createFormatter } from '../infrastructure/formatters/createFormatter.js';
+import type { OutputFormat } from '../core/ports/OutputFormatter.port.js';
 
 export interface RefactorCliOptions {
   apply: boolean;
-  format: 'text' | 'json' | 'markdown';
+  format: OutputFormat;
   output?: string;
   include?: string[];
   exclude?: string[];
@@ -30,15 +32,8 @@ export async function runRefactorCommand(
     if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
       throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
     }
-    if (options.format !== 'text') {
-      logger.warn(`--format ${options.format} aún no está implementado (llega con los formatters); usando texto.`);
-    }
-    if (options.output) {
-      logger.warn(`--output aún no está implementado (llega con los formatters); imprimiendo en stdout.`);
-    }
 
     const useCase = new RefactorCodeUseCase(parser, createLlmClient(), fileSystem);
-
     logger.info({ target, apply: options.apply }, 'Generando sugerencias de refactor con Claude');
 
     const result = await useCase.execute({
@@ -48,31 +43,26 @@ export async function runRefactorCommand(
       excludePatterns: options.exclude,
       maxTokensPerChunk,
       onProgress: (message) => logger.info(message),
-      onToken: (text) => process.stdout.write(text),
+      onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
     });
 
-    if (result.suggestions.length > 0) {
-      process.stdout.write('\n\n');
+    const formatted = createFormatter(options.format).formatRefactorSuggestions(result.suggestions);
+    if (options.output) {
+      await fileSystem.writeFile(options.output, formatted);
+      logger.info(`Resultado guardado en ${options.output}`);
+    } else {
+      const separator = options.format === 'text' ? '\n\n' : '';
+      process.stdout.write(`${separator}${formatted}\n`);
     }
 
     if (result.suggestions.length === 0) {
-      logger.info('No se encontraron oportunidades de refactor.');
       return;
     }
-
-    for (const suggestion of result.suggestions) {
-      logger.info(`\n[${suggestion.filePath}] ${suggestion.title} (confianza: ${suggestion.confidence.toFixed(2)})`);
-      logger.info(`  ${suggestion.rationale}`);
-      process.stdout.write(`${suggestion.diff}\n`);
-    }
-
-    if (options.apply) {
-      logger.info(`${result.appliedCount} refactor(s) aplicado(s) directamente sobre los archivos de origen.`);
-    } else {
-      logger.info(
-        `${result.suggestions.length} sugerencia(s) generada(s) en modo dry-run. Usá --apply para escribirlas.`,
-      );
-    }
+    logger.info(
+      options.apply
+        ? `${result.appliedCount} refactor(s) aplicado(s) directamente sobre los archivos de origen.`
+        : `${result.suggestions.length} sugerencia(s) generada(s) en modo dry-run. Usá --apply para escribirlas.`,
+    );
   } catch (error) {
     if (isAppError(error)) {
       logger.error({ code: error.code, err: error }, error.message);

@@ -5,13 +5,11 @@ parsing estático (TypeScript Compiler API) con análisis semántico vía la
 API de Claude para detectar problemas de calidad, generar parches de
 refactorización aplicables y crear tests unitarios automáticamente.
 
-> Estado: `code-agent analyze` y `code-agent refactor` funcionan
-> end-to-end contra la API real de Claude con streaming en tiempo real.
-> `refactor` genera sugerencias con su unified diff derivado
-> deterministamente (no confiado al LLM) y, con `--apply`, las escribe en
-> el archivo de origen ubicándolas por la posición exacta que calculó el
-> parser. La generación de tests y los formatters se implementan paso a
-> paso — ver [Roadmap](#roadmap).
+> Estado: los tres subcomandos (`analyze`, `refactor`, `generate-tests`)
+> funcionan end-to-end contra la API real de Claude con streaming en
+> tiempo real, y soportan salida en texto (con color), JSON o Markdown vía
+> `--format`. Los 6 pasos del roadmap original están completos — ver
+> [Roadmap](#roadmap).
 
 ## Arquitectura
 
@@ -31,7 +29,7 @@ src/
 │   ├── entities/
 │   │   ├── CodeUnit.ts             # Unidad de código extraída del AST
 │   │   ├── AnalysisResult.ts
-│   │   ├── RefactorSuggestion.ts   # Sugerencia como unified diff
+│   │   ├── RefactorSuggestion.ts   # Sugerencia + unified diff
 │   │   └── GeneratedTest.ts
 │   ├── ports/                      # Contratos (hexagonal ports)
 │   │   ├── CodeParser.port.ts
@@ -39,31 +37,27 @@ src/
 │   │   ├── OutputFormatter.port.ts
 │   │   └── FileSystem.port.ts
 │   ├── services/                   # Lógica de dominio pura (sin I/O)
-│   │   ├── AstChunker.ts           # Chunking de CodeUnit[] por presupuesto de tokens
-│   │   ├── LlmJsonResponse.ts      # Extracción tolerante del JSON de una respuesta del LLM
-│   │   ├── PromptTemplates.ts      # Prompt de análisis + parseo/validación estricta de la respuesta
+│   │   ├── AstChunker.ts               # Chunking de CodeUnit[] por presupuesto de tokens
+│   │   ├── LlmJsonResponse.ts          # Extracción tolerante del JSON de una respuesta del LLM
+│   │   ├── PromptTemplates.ts          # Prompt de análisis + parseo/validación estricta
 │   │   ├── RefactorPromptTemplates.ts  # Prompt de refactor + parseo/validación estricta
-│   │   └── DiffGenerator.ts        # Unified diff determinista + reemplazo de una unidad por línea
-│   └── use-cases/
-│       ├── AnalyzeCodebase.usecase.ts  # Implementado: parseo -> chunking -> streaming -> hallazgos
-│       ├── RefactorCode.usecase.ts     # Implementado: parseo -> chunking -> streaming -> (--apply) escritura
-│       └── GenerateTests.usecase.ts
+│   │   ├── GenerateTestsPromptTemplates.ts  # Prompt de generación de tests + parseo
+│   │   └── DiffGenerator.ts            # Unified diff determinista + reemplazo de una unidad por línea
+│   └── use-cases/                  # Los 3 implementados end-to-end
+│       ├── AnalyzeCodebase.usecase.ts  # parseo -> chunking -> streaming -> hallazgos
+│       ├── RefactorCode.usecase.ts     # parseo -> chunking -> streaming -> (--apply) escritura
+│       └── GenerateTests.usecase.ts    # parseo -> agrupado por archivo -> streaming -> escritura
 ├── infrastructure/                 # Adaptadores (implementaciones concretas)
 │   ├── parsing/                    # TsCompilerParser, TokenEstimator
 │   ├── llm/                        # AnthropicClient (streaming real sobre @anthropic-ai/sdk)
-│   ├── testgen/                    # VitestTestWriter
-│   ├── formatters/                 # Terminal, JSON, Markdown
-│   └── filesystem/                 # NodeFileSystem (implementado)
+│   ├── formatters/                 # TerminalFormatter, JsonFormatter, MarkdownFormatter
+│   └── filesystem/                 # NodeFileSystem
 ├── shared/
 │   ├── logger.ts                   # pino (structured logging)
 │   ├── config.ts                   # zod env schema
 │   └── errors.ts                   # jerarquía AppError
 └── container.ts                    # Composition root (DI)
 ```
-
-Cada carpeta de `infrastructure/` pendiente trae un `TODO.md` con la
-responsabilidad exacta del adaptador que falta implementar ahí
-(`parsing/` ya no tiene uno: está implementado).
 
 ## Quickstart
 
@@ -88,21 +82,25 @@ npm run dev -- analyze ./src
 ## Comandos del CLI
 
 ```bash
-code-agent analyze <target> [--format text|json|markdown] [--include ...] [--exclude ...]
-code-agent refactor <target> [--apply] [--format ...]
-code-agent generate-tests <target> [--framework vitest|jest] [--output-dir ...]
+code-agent analyze <target> [--format text|json|markdown] [--output file] [--include ...] [--exclude ...] [--max-tokens N]
+code-agent refactor <target> [--apply] [--format ...] [--output file] [--include ...] [--exclude ...] [--max-tokens N]
+code-agent generate-tests <target> [--framework vitest|jest] [--output-dir dir] [--format ...] [--include ...] [--exclude ...]
 ```
 
-Todos aceptan `--log-level` a nivel global.
+- `analyze`: reporta hallazgos (complejidad, duplicación, naming, seguridad, performance, mantenibilidad) con severidad y ubicación exacta.
+- `refactor`: dry-run por defecto (imprime el diff sugerido); `--apply` lo escribe directo sobre el archivo de origen.
+- `generate-tests`: genera un archivo `*.generated.test.ts` por archivo fuente, cubriendo sus funciones exportadas (no unidades tipo `method`, que requerirían instanciar su clase).
+- `--format text` (default) pinta en vivo los tokens de la respuesta de Claude en la terminal; con `json`/`markdown` la salida queda limpia para pipear a otra herramienta o pegar en una PR.
+- Todos aceptan `--log-level` a nivel global.
 
 ## Roadmap
 
 1. ✅ Estructura del proyecto, arquitectura hexagonal, CLI cableado con los 3 subcomandos.
-2. ✅ `TsCompilerParser` + `AstChunker`: extracción real de `CodeUnit[]` (funciones, métodos, clases, interfaces, type aliases, arrow functions) vía TypeScript Compiler API, con detección de dependencias y chunking por presupuesto de tokens. `code-agent analyze <target>` ya reporta unidades y chunks reales.
+2. ✅ `TsCompilerParser` + `AstChunker`: extracción real de `CodeUnit[]` (funciones, métodos, clases, interfaces, type aliases, arrow functions) vía TypeScript Compiler API, con detección de dependencias y chunking por presupuesto de tokens.
 3. ✅ `AnthropicClient` (streaming real sobre `@anthropic-ai/sdk`) + `AnalyzeCodebaseUseCase` completo: cada chunk se envía a Claude, los tokens se pintan en la terminal a medida que llegan, y la respuesta JSON se valida estrictamente (zod) y se mapea a `AnalysisFinding[]`.
 4. ✅ `DiffGenerator` + `RefactorCodeUseCase`: cada refactor se deriva a un unified diff determinista y, con `--apply`, se aplica sobre el archivo real por la ubicación exacta de la unidad (`NodeFileSystem`).
-5. ⏳ `VitestTestWriter` + `GenerateTestsUseCase`: generación automática de tests.
-6. ⏳ Formatters (`TerminalFormatter`, `JsonFormatter`, `MarkdownFormatter`).
+5. ✅ `GenerateTestsUseCase`: agrupa las funciones exportadas por archivo, le pide a Claude un archivo de test por grupo (streaming) y lo escribe junto al código fuente (o en `--output-dir`).
+6. ✅ `TerminalFormatter` / `JsonFormatter` / `MarkdownFormatter`: `--format` controla la salida final de los tres comandos; `--output` la guarda en un archivo.
 
 ## Licencia
 

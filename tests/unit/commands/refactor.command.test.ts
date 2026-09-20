@@ -39,15 +39,16 @@ describe('runRefactorCommand', () => {
     expect(calls.some((call) => String(call.args[0]).includes('dry-run'))).toBe(true);
   });
 
-  it('sin sugerencias, informa que no hay oportunidades de refactor', async () => {
-    const { logger, calls } = createFakeLogger();
+  it('sin sugerencias, informa en stdout que no hay oportunidades de refactor', async () => {
+    const { logger } = createFakeLogger();
     const parser = new TsCompilerParser();
     const fileSystem = createFakeFileSystem();
     const { llm } = createFakeLlmClient(['[]']);
 
     await runRefactorCommand(FIXTURE_PATH, baseOptions, { logger, parser, fileSystem, createLlmClient: () => llm });
 
-    expect(calls.some((call) => String(call.args[0]).includes('No se encontraron oportunidades'))).toBe(true);
+    const written = stdoutWriteSpy.mock.calls.map((call) => call[0]).join('');
+    expect(written).toMatch(/no se encontraron oportunidades/i);
   });
 
   it('marca process.exitCode = 1 si falta la API key de Claude', async () => {
