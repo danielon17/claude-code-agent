@@ -1,21 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { runRefactorCommand } from '../../../src/commands/refactor.command.js';
 import { runGenerateTestsCommand } from '../../../src/commands/generate-tests.command.js';
 import { createFakeLogger } from '../../helpers/fakeLogger.js';
 
 afterEach(() => {
   process.exitCode = undefined;
-});
-
-describe('runRefactorCommand', () => {
-  it('loguea que RefactorCodeUseCase aún no está implementado, sin lanzar', async () => {
-    const { logger, calls } = createFakeLogger();
-    await runRefactorCommand('.', { apply: false, format: 'text' }, { logger });
-    expect(calls.some((call) => call.level === 'warn' && String(call.args[0]).includes('no está implementado'))).toBe(
-      true,
-    );
-    expect(process.exitCode).toBeUndefined();
-  });
 });
 
 describe('runGenerateTestsCommand', () => {

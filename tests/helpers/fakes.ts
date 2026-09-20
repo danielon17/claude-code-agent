@@ -1,6 +1,8 @@
 import type { CodeParser } from '../../src/core/ports/CodeParser.port.js';
 import type { LlmClient, LlmCompletionOptions, LlmMessage } from '../../src/core/ports/LlmClient.port.js';
+import type { FileSystemPort } from '../../src/core/ports/FileSystem.port.js';
 import type { CodeUnit, CodeUnitKind } from '../../src/core/entities/CodeUnit.js';
+import { FileSystemError } from '../../src/shared/errors.js';
 
 export function makeCodeUnit(overrides: Partial<CodeUnit> & { name: string }): CodeUnit {
   return {
@@ -51,4 +53,25 @@ export function createFakeLlmClient(responses: string[]): { llm: LlmClient; call
   };
 
   return { llm, calls };
+}
+
+/** Doble de `FileSystemPort` en memoria, para testear use cases que leen/escriben archivos sin tocar el disco real. */
+export function createFakeFileSystem(initialFiles: Record<string, string> = {}): FileSystemPort {
+  const files = new Map(Object.entries(initialFiles));
+
+  return {
+    readFile: (filePath: string) => {
+      const contents = files.get(filePath);
+      if (contents === undefined) {
+        return Promise.reject(new FileSystemError(`No se pudo leer el archivo: ${filePath}`));
+      }
+      return Promise.resolve(contents);
+    },
+    writeFile: (filePath: string, contents: string) => {
+      files.set(filePath, contents);
+      return Promise.resolve();
+    },
+    exists: (filePath: string) => Promise.resolve(files.has(filePath)),
+    isDirectory: () => Promise.resolve(false),
+  };
 }

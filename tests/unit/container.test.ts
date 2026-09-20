@@ -8,13 +8,15 @@ afterEach(() => {
 });
 
 describe('createContainer', () => {
-  it('cablea el logger, la config y el parser real (TsCompilerParser)', async () => {
+  it('cablea el logger, la config, el parser y el filesystem reales', async () => {
     const { createContainer } = await import('../../src/container.js');
     const { TsCompilerParser } = await import('../../src/infrastructure/parsing/TsCompilerParser.js');
+    const { NodeFileSystem } = await import('../../src/infrastructure/filesystem/NodeFileSystem.js');
     const container = createContainer();
     expect(container.logger).toBeDefined();
     expect(container.config).toBeDefined();
     expect(container.parser).toBeInstanceOf(TsCompilerParser);
+    expect(container.fileSystem).toBeInstanceOf(NodeFileSystem);
   });
 
   it('createLlmClient() lanza ConfigurationError si falta ANTHROPIC_API_KEY', async () => {

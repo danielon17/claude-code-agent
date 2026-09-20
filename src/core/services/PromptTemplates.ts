@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CodeUnit } from '../entities/CodeUnit.js';
 import type { AnalysisFinding } from '../entities/AnalysisResult.js';
 import { LlmError } from '../../shared/errors.js';
+import { extractJsonArray } from './LlmJsonResponse.js';
 
 export const ANALYSIS_SYSTEM_PROMPT = `Sos un Staff Software Engineer haciendo code review de TypeScript.
 Se te van a dar una o más unidades de código (funciones, métodos, clases, interfaces, type aliases) extraídas de un repositorio real.
@@ -81,16 +82,4 @@ export function parseFindingsResponse(rawText: string, units: readonly CodeUnit[
       location: unit.location,
     };
   });
-}
-
-function extractJsonArray(rawText: string): string {
-  const fencedMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(rawText);
-  const candidate = fencedMatch ? fencedMatch[1]! : rawText;
-
-  const start = candidate.indexOf('[');
-  const end = candidate.lastIndexOf(']');
-  if (start === -1 || end === -1 || end < start) {
-    throw new LlmError('La respuesta de Claude no contiene un arreglo JSON de hallazgos.');
-  }
-  return candidate.slice(start, end + 1);
 }
