@@ -1,0 +1,62 @@
+{
+  "name": "claude-code-agent",
+  "version": "0.1.0",
+  "description": "Agente CLI de análisis y refactorización de código en tiempo real potenciado por la API de Claude (Anthropic), con parsing AST vía TypeScript Compiler API, chunking inteligente de contexto y generación automática de tests unitarios.",
+  "type": "module",
+  "bin": {
+    "code-agent": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "claude",
+    "anthropic",
+    "refactoring",
+    "static-analysis",
+    "ast",
+    "code-review",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "diff": "^7.0.0",
+    "dotenv": "^16.4.5",
+    "fast-glob": "^3.3.2",
+    "ora": "^8.1.1",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "typescript": "^5.6.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.2.3",
+    "@types/node": "^22.9.0",
+    "@typescript-eslint/eslint-plugin": "^8.13.0",
+    "@typescript-eslint/parser": "^8.13.0",
+    "@vitest/coverage-v8": "^2.1.4",
+    "eslint": "^9.14.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.4"
+  }
+}
