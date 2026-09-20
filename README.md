@@ -5,10 +5,11 @@ parsing estático (TypeScript Compiler API) con análisis semántico vía la
 API de Claude para detectar problemas de calidad, generar parches de
 refactorización aplicables y crear tests unitarios automáticamente.
 
-> Estado: **scaffold inicial**. La arquitectura, el CLI y los contratos
-> (puertos/entidades) están completos y funcionando end-to-end; los
-> adaptadores de infraestructura (parser real, cliente de Claude, diff,
-> formatters) se implementan paso a paso — ver [Roadmap](#roadmap).
+> Estado: arquitectura, CLI y contratos (puertos/entidades) completos; el
+> parser real (`TsCompilerParser` + `AstChunker`) ya extrae y agrupa
+> unidades de código de un repositorio TypeScript real. El cliente de
+> Claude, el diff y los formatters se implementan paso a paso — ver
+> [Roadmap](#roadmap).
 
 ## Arquitectura
 
@@ -53,8 +54,9 @@ src/
 └── container.ts                    # Composition root (DI)
 ```
 
-Cada carpeta de `infrastructure/` trae un `TODO.md` con la responsabilidad
-exacta del adaptador que falta implementar ahí.
+Cada carpeta de `infrastructure/` pendiente trae un `TODO.md` con la
+responsabilidad exacta del adaptador que falta implementar ahí
+(`parsing/` ya no tiene uno: está implementado).
 
 ## Quickstart
 
@@ -89,7 +91,7 @@ Todos aceptan `--log-level` a nivel global.
 ## Roadmap
 
 1. ✅ Estructura del proyecto, arquitectura hexagonal, CLI cableado con los 3 subcomandos.
-2. ⏳ `TsCompilerParser` + `AstChunker`: extracción real de `CodeUnit[]` vía TypeScript Compiler API y chunking por límite de tokens.
+2. ✅ `TsCompilerParser` + `AstChunker`: extracción real de `CodeUnit[]` (funciones, métodos, clases, interfaces, type aliases, arrow functions) vía TypeScript Compiler API, con detección de dependencias y chunking por presupuesto de tokens. `code-agent analyze <target>` ya reporta unidades y chunks reales.
 3. ⏳ `AnthropicClient` con streaming real hacia Claude y `AnalyzeCodebaseUseCase` completo.
 4. ⏳ `DiffGenerator` + `RefactorCodeUseCase`: generación y aplicación de parches `.diff`.
 5. ⏳ `VitestTestWriter` + `GenerateTestsUseCase`: generación automática de tests.
