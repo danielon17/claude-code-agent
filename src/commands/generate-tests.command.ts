@@ -1,10 +1,10 @@
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { createContainer, type AppContainer } from '../container.js';
 import { isAppError } from '../shared/errors.js';
 import { GenerateTestsUseCase } from '../core/use-cases/GenerateTests.usecase.js';
 import { createFormatter } from '../infrastructure/formatters/createFormatter.js';
-import type { TestFramework } from '../core/entities/GeneratedTest.js';
-import type { OutputFormat } from '../core/ports/OutputFormatter.port.js';
+import { TEST_FRAMEWORKS, type TestFramework } from '../core/entities/GeneratedTest.js';
+import { OUTPUT_FORMATS, type OutputFormat } from '../core/ports/OutputFormatter.port.js';
 
 export interface GenerateTestsCliOptions {
   framework: TestFramework;
@@ -70,9 +70,9 @@ export function registerGenerateTestsCommand(program: Command): void {
     .command('generate-tests')
     .description('Genera tests unitarios para las funciones exportadas de un archivo o directorio.')
     .argument('<target>', 'Ruta al archivo o directorio a testear')
-    .option('--framework <framework>', 'Framework de testing: vitest | jest', 'vitest')
+    .addOption(new Option('--framework <framework>', 'Framework de testing').choices(TEST_FRAMEWORKS).default('vitest'))
     .option('--output-dir <dir>', 'Directorio donde escribir los tests generados (por defecto junto al código fuente)')
-    .option('-f, --format <format>', 'Formato de salida del resumen: text | json | markdown', 'text')
+    .addOption(new Option('-f, --format <format>', 'Formato de salida del resumen').choices(OUTPUT_FORMATS).default('text'))
     .option('--include <patterns...>', 'Glob patterns a incluir (ej: "src/**/*.ts")')
     .option('--exclude <patterns...>', 'Glob patterns a excluir (ej: "**/*.test.ts")')
     .option('--max-tokens <number>', 'Límite de tokens por chunk enviado al modelo', '4000')

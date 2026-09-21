@@ -1,4 +1,5 @@
-export type TestFramework = 'vitest' | 'jest';
+export const TEST_FRAMEWORKS = ['vitest', 'jest'] as const;
+export type TestFramework = (typeof TEST_FRAMEWORKS)[number];
 
 /**
  * Archivo de test generado por el LLM a partir de una o más `CodeUnit` del

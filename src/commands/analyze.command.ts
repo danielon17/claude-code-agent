@@ -1,9 +1,9 @@
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { createContainer, type AppContainer } from '../container.js';
 import { isAppError } from '../shared/errors.js';
 import { AnalyzeCodebaseUseCase } from '../core/use-cases/AnalyzeCodebase.usecase.js';
 import { createFormatter } from '../infrastructure/formatters/createFormatter.js';
-import type { OutputFormat } from '../core/ports/OutputFormatter.port.js';
+import { OUTPUT_FORMATS, type OutputFormat } from '../core/ports/OutputFormatter.port.js';
 
 export interface AnalyzeCliOptions {
   format: OutputFormat;
@@ -75,7 +75,7 @@ export function registerAnalyzeCommand(program: Command): void {
       'Analiza un archivo o directorio en busca de problemas de complejidad, duplicación, seguridad y mantenibilidad.',
     )
     .argument('<target>', 'Ruta al archivo o directorio a analizar')
-    .option('-f, --format <format>', 'Formato de salida: text | json | markdown', 'text')
+    .addOption(new Option('-f, --format <format>', 'Formato de salida').choices(OUTPUT_FORMATS).default('text'))
     .option('-o, --output <file>', 'Guardar el resultado en un archivo en lugar de stdout')
     .option('--include <patterns...>', 'Glob patterns a incluir (ej: "src/**/*.ts")')
     .option('--exclude <patterns...>', 'Glob patterns a excluir (ej: "**/*.test.ts")')

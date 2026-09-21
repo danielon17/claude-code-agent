@@ -2,7 +2,8 @@ import type { AnalysisResult } from '../entities/AnalysisResult.js';
 import type { RefactorSuggestion } from '../entities/RefactorSuggestion.js';
 import type { GeneratedTest } from '../entities/GeneratedTest.js';
 
-export type OutputFormat = 'text' | 'json' | 'markdown';
+export const OUTPUT_FORMATS = ['text', 'json', 'markdown'] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
 
 /**
  * Puerto de salida hacia la presentación de resultados. Permite añadir

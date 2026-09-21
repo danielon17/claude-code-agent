@@ -1,9 +1,9 @@
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { createContainer, type AppContainer } from '../container.js';
 import { isAppError } from '../shared/errors.js';
 import { RefactorCodeUseCase } from '../core/use-cases/RefactorCode.usecase.js';
 import { createFormatter } from '../infrastructure/formatters/createFormatter.js';
-import type { OutputFormat } from '../core/ports/OutputFormatter.port.js';
+import { OUTPUT_FORMATS, type OutputFormat } from '../core/ports/OutputFormatter.port.js';
 
 export interface RefactorCliOptions {
   apply: boolean;
@@ -79,7 +79,7 @@ export function registerRefactorCommand(program: Command): void {
     .description('Genera parches (.diff) de refactorización sugeridos por Claude para un archivo o directorio.')
     .argument('<target>', 'Ruta al archivo o directorio a refactorizar')
     .option('--apply', 'Aplica los parches generados directamente sobre el archivo (por defecto es dry-run)', false)
-    .option('-f, --format <format>', 'Formato de salida: text | json | markdown', 'text')
+    .addOption(new Option('-f, --format <format>', 'Formato de salida').choices(OUTPUT_FORMATS).default('text'))
     .option('-o, --output <file>', 'Guardar los diffs generados en un archivo en lugar de stdout')
     .option('--include <patterns...>', 'Glob patterns a incluir (ej: "src/**/*.ts")')
     .option('--exclude <patterns...>', 'Glob patterns a excluir (ej: "**/*.test.ts")')
