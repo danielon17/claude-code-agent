@@ -5,7 +5,7 @@ import { runAnalyzeCommand, type AnalyzeCliOptions } from '../../../src/commands
 import { TsCompilerParser } from '../../../src/infrastructure/parsing/TsCompilerParser.js';
 import { ConfigurationError } from '../../../src/shared/errors.js';
 import { createFakeLogger } from '../../helpers/fakeLogger.js';
-import { createFakeFileSystem, createFakeLlmClient } from '../../helpers/fakes.js';
+import { createFakeFileSystem, createFakeLlmClient, createFakeTelemetry, TEST_RUN_ID } from '../../helpers/fakes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.resolve(__dirname, '../../fixtures/sample-parsing.ts');
@@ -36,7 +36,14 @@ describe('runAnalyzeCommand', () => {
     const fileSystem = createFakeFileSystem();
     const { llm } = createFakeLlmClient(['[]']);
 
-    await runAnalyzeCommand(FIXTURE_PATH, baseOptions, { logger, parser, fileSystem, createLlmClient: () => llm });
+    await runAnalyzeCommand(FIXTURE_PATH, baseOptions, {
+      logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
+      parser,
+      fileSystem,
+      createLlmClient: () => llm,
+    });
 
     expect(writtenToStdout()).toContain('no se encontraron problemas');
     expect(process.exitCode).toBeUndefined();
@@ -51,7 +58,14 @@ describe('runAnalyzeCommand', () => {
     await runAnalyzeCommand(
       FIXTURE_PATH,
       { ...baseOptions, format: 'json' },
-      { logger, parser, fileSystem, createLlmClient: () => llm },
+      {
+        logger,
+        runId: TEST_RUN_ID,
+        telemetry: createFakeTelemetry(),
+        parser,
+        fileSystem,
+        createLlmClient: () => llm,
+      },
     );
 
     const parsed = JSON.parse(writtenToStdout().trim());
@@ -67,7 +81,14 @@ describe('runAnalyzeCommand', () => {
     await runAnalyzeCommand(
       FIXTURE_PATH,
       { ...baseOptions, output: '/tmp/result.txt' },
-      { logger, parser, fileSystem, createLlmClient: () => llm },
+      {
+        logger,
+        runId: TEST_RUN_ID,
+        telemetry: createFakeTelemetry(),
+        parser,
+        fileSystem,
+        createLlmClient: () => llm,
+      },
     );
 
     await expect(fileSystem.readFile('/tmp/result.txt')).resolves.toContain('no se encontraron problemas');
@@ -83,7 +104,14 @@ describe('runAnalyzeCommand', () => {
     await runAnalyzeCommand(
       FIXTURE_PATH,
       { ...baseOptions, maxTokens: 'no-es-un-numero' },
-      { logger, parser, fileSystem, createLlmClient: () => llm },
+      {
+        logger,
+        runId: TEST_RUN_ID,
+        telemetry: createFakeTelemetry(),
+        parser,
+        fileSystem,
+        createLlmClient: () => llm,
+      },
     );
 
     expect(process.exitCode).toBe(1);
@@ -98,6 +126,8 @@ describe('runAnalyzeCommand', () => {
 
     await runAnalyzeCommand('./ruta/que/no/existe.ts', baseOptions, {
       logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
       parser,
       fileSystem,
       createLlmClient: () => llm,
@@ -114,6 +144,8 @@ describe('runAnalyzeCommand', () => {
 
     await runAnalyzeCommand(FIXTURE_PATH, baseOptions, {
       logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
       parser,
       fileSystem,
       createLlmClient: () => {

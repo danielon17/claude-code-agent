@@ -60,7 +60,8 @@ src/
 │   ├── config.ts                   # zod env schema (incl. tuning de retry/rate-limit)
 │   ├── errors.ts                   # jerarquía AppError
 │   ├── retry.ts                    # Backoff exponencial + jitter genérico
-│   └── rateLimiter.ts              # Espaciador de llamadas salientes
+│   ├── rateLimiter.ts              # Espaciador de llamadas salientes
+│   └── telemetry.ts                # Tracing distribuido (OpenTelemetry), opt-in
 └── container.ts                    # Composition root (DI) — runId por ejecución, wiring de resiliencia
 ```
 
@@ -105,6 +106,7 @@ code-agent generate-tests <target> [--framework vitest|jest] [--output-dir dir] 
 - **Logging estructurado y trazabilidad**: cada invocación del CLI genera un `runId` corto (`container.ts`) que se adjunta a *todas* las líneas de log de esa corrida (`logger.child`), para poder correlacionar el output de una ejecución en un log agregado. El logger redacta (`pino.redact`) cualquier campo que pudiera contener una API key, como defensa en profundidad además de que el código nunca loguea `ANTHROPIC_API_KEY` directamente.
 - **Validación estricta de entrada**: `--format` y `--framework` son enums cerrados a nivel de Commander (`Option#choices`, rechaza cualquier otro valor con un mensaje claro antes de ejecutar nada); `--max-tokens` se valida como entero positivo; toda la configuración de entorno se valida con `zod` al arrancar (falla rápido con un mensaje claro, en vez de propagar `undefined`).
 - **Gestión de secretos**: `ANTHROPIC_API_KEY` solo se lee de variables de entorno (nunca hardcodeada, nunca committeada — `.env` está en `.gitignore`); `createLlmClient()` es perezoso, así que comandos que todavía no usan el LLM no fallan por una key ausente que no necesitan.
+- **Telemetría (tracing distribuido)**: cada invocación de `analyze`/`refactor`/`generate-tests` queda envuelta en un span de OpenTelemetry (`cli.analyze`, etc.) con el `runId` como atributo — mismo identificador que en los logs, para correlacionar ambos. Sin `OTEL_EXPORTER_OTLP_ENDPOINT` configurado es efectivamente gratis: los spans se crean (verificables en tests con un `InMemorySpanExporter`) pero no se exportan a ningún colector, así que no hay overhead de red ni dependencia externa para correr el CLI. Con el endpoint configurado, se exportan vía OTLP/HTTP a cualquier backend compatible (Jaeger, Tempo, Datadog, etc.).
 - **Por qué no hay sandboxing de red/filesystem adicional**: este es un CLI que un desarrollador corre localmente sobre su propio código, con sus propios permisos de OS — restringir a qué archivos puede acceder sería contraproducente (el usuario le pide explícitamente que lea/escriba en rutas de su elección, incluyendo `--output`/`--output-dir`). Si se necesita aislamiento real (ejecutarlo en CI o en un entorno no confiable), la imagen Docker multi-stage (ver abajo) corre como usuario no-root y sin herramientas de build, que es el mecanismo de aislamiento apropiado para esta clase de herramienta.
 
 ## Docker
@@ -129,6 +131,7 @@ El `Dockerfile` usa *multi-stage build*: una etapa instala dependencias y compil
 5. ✅ `GenerateTestsUseCase`: agrupa las funciones exportadas por archivo, le pide a Claude un archivo de test por grupo (streaming) y lo escribe junto al código fuente (o en `--output-dir`).
 6. ✅ `TerminalFormatter` / `JsonFormatter` / `MarkdownFormatter`: `--format` controla la salida final de los tres comandos; `--output` la guarda en un archivo.
 7. ✅ Hardening a nivel producción: retry con backoff exponencial + rate limiting en `AnthropicClient`, logging correlacionado por ejecución (`runId`) con redacción de secretos, validación estricta de opciones del CLI (`Option#choices`), `Dockerfile` multi-stage (imagen final sin herramientas de build, usuario no-root) y CI en GitHub Actions (lint + typecheck + test + build + docker build en cada PR).
+8. ✅ Cierre de gaps identificados en una revisión de nivel Staff Engineer: `npm audit` a 0 vulnerabilidades (incl. `diff` v6-8, con un DoS real en `parsePatch`/`applyPatch` que este proyecto no usa, y `vitest`/`vite`/`esbuild`, dev-only); `cli.ts` con cobertura de integración real (`registerXCommand` acepta un `containerFactory` inyectable, ejercitado de punta a punta vía `program.parseAsync(...)` incluida la validación de `Option#choices`); tracing distribuido con OpenTelemetry (ver arriba).
 
 ## Licencia
 

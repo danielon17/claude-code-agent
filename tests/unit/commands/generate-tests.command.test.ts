@@ -5,7 +5,7 @@ import { runGenerateTestsCommand, type GenerateTestsCliOptions } from '../../../
 import { TsCompilerParser } from '../../../src/infrastructure/parsing/TsCompilerParser.js';
 import { ConfigurationError } from '../../../src/shared/errors.js';
 import { createFakeLogger } from '../../helpers/fakeLogger.js';
-import { createFakeFileSystem, createFakeLlmClient } from '../../helpers/fakes.js';
+import { createFakeFileSystem, createFakeLlmClient, createFakeTelemetry, TEST_RUN_ID } from '../../helpers/fakes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.resolve(__dirname, '../../fixtures/sample-parsing.ts');
@@ -31,7 +31,14 @@ describe('runGenerateTestsCommand', () => {
     const response = JSON.stringify({ testFileSourceCode: "import { add } from './sample-parsing.js';" });
     const { llm } = createFakeLlmClient([response, response]);
 
-    await runGenerateTestsCommand(FIXTURE_PATH, baseOptions, { logger, parser, fileSystem, createLlmClient: () => llm });
+    await runGenerateTestsCommand(FIXTURE_PATH, baseOptions, {
+      logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
+      parser,
+      fileSystem,
+      createLlmClient: () => llm,
+    });
 
     expect(process.exitCode).toBeUndefined();
     const written = stdoutWriteSpy.mock.calls.map((call) => call[0]).join('');
@@ -46,6 +53,8 @@ describe('runGenerateTestsCommand', () => {
 
     await runGenerateTestsCommand(FIXTURE_PATH, baseOptions, {
       logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
       parser,
       fileSystem,
       createLlmClient: () => {
@@ -66,7 +75,14 @@ describe('runGenerateTestsCommand', () => {
     await runGenerateTestsCommand(
       FIXTURE_PATH,
       { ...baseOptions, maxTokens: 'no-es-un-numero' },
-      { logger, parser, fileSystem, createLlmClient: () => llm },
+      {
+        logger,
+        runId: TEST_RUN_ID,
+        telemetry: createFakeTelemetry(),
+        parser,
+        fileSystem,
+        createLlmClient: () => llm,
+      },
     );
 
     expect(process.exitCode).toBe(1);

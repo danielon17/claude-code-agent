@@ -13,7 +13,7 @@ export interface AnalyzeCliOptions {
   maxTokens: string;
 }
 
-type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSystem' | 'createLlmClient'>;
+type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'runId' | 'telemetry' | 'parser' | 'fileSystem' | 'createLlmClient'>;
 
 /**
  * Lógica del subcomando `analyze`, separada del registro en Commander para
@@ -28,36 +28,42 @@ type AnalyzeCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSystem' 
 export async function runAnalyzeCommand(
   target: string,
   options: AnalyzeCliOptions,
-  { logger, parser, fileSystem, createLlmClient }: AnalyzeCommandDeps,
+  { logger, runId, telemetry, parser, fileSystem, createLlmClient }: AnalyzeCommandDeps,
 ): Promise<void> {
   try {
-    const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
-    if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
-      throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
-    }
+    await telemetry.withSpan(
+      'cli.analyze',
+      async () => {
+        const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
+        if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
+          throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
+        }
 
-    const useCase = new AnalyzeCodebaseUseCase(parser, createLlmClient());
-    logger.info({ target }, 'Iniciando análisis semántico con Claude');
+        const useCase = new AnalyzeCodebaseUseCase(parser, createLlmClient());
+        logger.info({ target }, 'Iniciando análisis semántico con Claude');
 
-    const result = await useCase.execute({
-      targetPath: target,
-      includePatterns: options.include,
-      excludePatterns: options.exclude,
-      maxTokensPerChunk,
-      onProgress: (message) => logger.info(message),
-      // Solo pintamos tokens crudos en vivo cuando el formato final es texto:
-      // con json/markdown, stdout debe quedar limpio para el resultado formateado.
-      onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
-    });
+        const result = await useCase.execute({
+          targetPath: target,
+          includePatterns: options.include,
+          excludePatterns: options.exclude,
+          maxTokensPerChunk,
+          onProgress: (message) => logger.info(message),
+          // Solo pintamos tokens crudos en vivo cuando el formato final es texto:
+          // con json/markdown, stdout debe quedar limpio para el resultado formateado.
+          onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
+        });
 
-    const formatted = createFormatter(options.format).formatAnalysis(result);
-    if (options.output) {
-      await fileSystem.writeFile(options.output, formatted);
-      logger.info(`Resultado guardado en ${options.output}`);
-    } else {
-      const separator = options.format === 'text' ? '\n\n' : '';
-      process.stdout.write(`${separator}${formatted}\n`);
-    }
+        const formatted = createFormatter(options.format).formatAnalysis(result);
+        if (options.output) {
+          await fileSystem.writeFile(options.output, formatted);
+          logger.info(`Resultado guardado en ${options.output}`);
+        } else {
+          const separator = options.format === 'text' ? '\n\n' : '';
+          process.stdout.write(`${separator}${formatted}\n`);
+        }
+      },
+      { 'run.id': runId, 'cli.target': target, 'cli.format': options.format },
+    );
   } catch (error) {
     if (isAppError(error)) {
       logger.error({ code: error.code, err: error }, error.message);
@@ -65,10 +71,19 @@ export async function runAnalyzeCommand(
       logger.error({ err: error }, 'Error inesperado durante el análisis');
     }
     process.exitCode = 1;
+  } finally {
+    await telemetry.shutdown();
   }
 }
 
-export function registerAnalyzeCommand(program: Command): void {
+/**
+ * `containerFactory` es inyectable (por defecto, el composition root real)
+ * específicamente para poder testear el registro del comando en Commander
+ * de punta a punta — parseo de argumentos, defaults y validación de
+ * `--format`/`--max-tokens` incluidos — sin pegarle a la API de Claude ni
+ * al filesystem real.
+ */
+export function registerAnalyzeCommand(program: Command, containerFactory: () => AppContainer = createContainer): void {
   program
     .command('analyze')
     .description(
@@ -81,6 +96,6 @@ export function registerAnalyzeCommand(program: Command): void {
     .option('--exclude <patterns...>', 'Glob patterns a excluir (ej: "**/*.test.ts")')
     .option('--max-tokens <number>', 'Límite de tokens por chunk enviado al modelo', '4000')
     .action(async (target: string, options: AnalyzeCliOptions) => {
-      await runAnalyzeCommand(target, options, createContainer());
+      await runAnalyzeCommand(target, options, containerFactory());
     });
 }

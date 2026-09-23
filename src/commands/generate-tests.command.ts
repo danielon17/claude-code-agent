@@ -15,7 +15,10 @@ export interface GenerateTestsCliOptions {
   maxTokens: string;
 }
 
-type GenerateTestsCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSystem' | 'createLlmClient'>;
+type GenerateTestsCommandDeps = Pick<
+  AppContainer,
+  'logger' | 'runId' | 'telemetry' | 'parser' | 'fileSystem' | 'createLlmClient'
+>;
 
 /**
  * Lógica del subcomando `generate-tests`, separada del registro en
@@ -26,35 +29,41 @@ type GenerateTestsCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSy
 export async function runGenerateTestsCommand(
   target: string,
   options: GenerateTestsCliOptions,
-  { logger, parser, fileSystem, createLlmClient }: GenerateTestsCommandDeps,
+  { logger, runId, telemetry, parser, fileSystem, createLlmClient }: GenerateTestsCommandDeps,
 ): Promise<void> {
   try {
-    const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
-    if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
-      throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
-    }
+    await telemetry.withSpan(
+      'cli.generate-tests',
+      async () => {
+        const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
+        if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
+          throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
+        }
 
-    const useCase = new GenerateTestsUseCase(parser, createLlmClient(), fileSystem);
-    logger.info({ target, framework: options.framework }, 'Generando tests con Claude');
+        const useCase = new GenerateTestsUseCase(parser, createLlmClient(), fileSystem);
+        logger.info({ target, framework: options.framework }, 'Generando tests con Claude');
 
-    const tests = await useCase.execute({
-      targetPath: target,
-      framework: options.framework,
-      outputDir: options.outputDir,
-      includePatterns: options.include,
-      excludePatterns: options.exclude,
-      maxTokensPerChunk,
-      onProgress: (message) => logger.info(message),
-      onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
-    });
+        const tests = await useCase.execute({
+          targetPath: target,
+          framework: options.framework,
+          outputDir: options.outputDir,
+          includePatterns: options.include,
+          excludePatterns: options.exclude,
+          maxTokensPerChunk,
+          onProgress: (message) => logger.info(message),
+          onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
+        });
 
-    const formatted = createFormatter(options.format).formatGeneratedTests(tests);
-    const separator = options.format === 'text' ? '\n\n' : '';
-    process.stdout.write(`${separator}${formatted}\n`);
+        const formatted = createFormatter(options.format).formatGeneratedTests(tests);
+        const separator = options.format === 'text' ? '\n\n' : '';
+        process.stdout.write(`${separator}${formatted}\n`);
 
-    if (tests.length > 0) {
-      logger.info(`${tests.length} archivo(s) de test escrito(s).`);
-    }
+        if (tests.length > 0) {
+          logger.info(`${tests.length} archivo(s) de test escrito(s).`);
+        }
+      },
+      { 'run.id': runId, 'cli.target': target, 'cli.framework': options.framework },
+    );
   } catch (error) {
     if (isAppError(error)) {
       logger.error({ code: error.code, err: error }, error.message);
@@ -62,10 +71,15 @@ export async function runGenerateTestsCommand(
       logger.error({ err: error }, 'Error inesperado durante la generación de tests');
     }
     process.exitCode = 1;
+  } finally {
+    await telemetry.shutdown();
   }
 }
 
-export function registerGenerateTestsCommand(program: Command): void {
+export function registerGenerateTestsCommand(
+  program: Command,
+  containerFactory: () => AppContainer = createContainer,
+): void {
   program
     .command('generate-tests')
     .description('Genera tests unitarios para las funciones exportadas de un archivo o directorio.')
@@ -77,6 +91,6 @@ export function registerGenerateTestsCommand(program: Command): void {
     .option('--exclude <patterns...>', 'Glob patterns a excluir (ej: "**/*.test.ts")')
     .option('--max-tokens <number>', 'Límite de tokens por chunk enviado al modelo', '4000')
     .action(async (target: string, options: GenerateTestsCliOptions) => {
-      await runGenerateTestsCommand(target, options, createContainer());
+      await runGenerateTestsCommand(target, options, containerFactory());
     });
 }

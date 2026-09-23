@@ -5,7 +5,7 @@ import { runRefactorCommand, type RefactorCliOptions } from '../../../src/comman
 import { TsCompilerParser } from '../../../src/infrastructure/parsing/TsCompilerParser.js';
 import { ConfigurationError } from '../../../src/shared/errors.js';
 import { createFakeLogger } from '../../helpers/fakeLogger.js';
-import { createFakeFileSystem, createFakeLlmClient } from '../../helpers/fakes.js';
+import { createFakeFileSystem, createFakeLlmClient, createFakeTelemetry, TEST_RUN_ID } from '../../helpers/fakes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.resolve(__dirname, '../../fixtures/sample-parsing.ts');
@@ -33,7 +33,14 @@ describe('runRefactorCommand', () => {
     ]);
     const { llm } = createFakeLlmClient([response]);
 
-    await runRefactorCommand(FIXTURE_PATH, baseOptions, { logger, parser, fileSystem, createLlmClient: () => llm });
+    await runRefactorCommand(FIXTURE_PATH, baseOptions, {
+      logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
+      parser,
+      fileSystem,
+      createLlmClient: () => llm,
+    });
 
     expect(process.exitCode).toBeUndefined();
     expect(calls.some((call) => String(call.args[0]).includes('dry-run'))).toBe(true);
@@ -45,7 +52,14 @@ describe('runRefactorCommand', () => {
     const fileSystem = createFakeFileSystem();
     const { llm } = createFakeLlmClient(['[]']);
 
-    await runRefactorCommand(FIXTURE_PATH, baseOptions, { logger, parser, fileSystem, createLlmClient: () => llm });
+    await runRefactorCommand(FIXTURE_PATH, baseOptions, {
+      logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
+      parser,
+      fileSystem,
+      createLlmClient: () => llm,
+    });
 
     const written = stdoutWriteSpy.mock.calls.map((call) => call[0]).join('');
     expect(written).toMatch(/no se encontraron oportunidades/i);
@@ -58,6 +72,8 @@ describe('runRefactorCommand', () => {
 
     await runRefactorCommand(FIXTURE_PATH, baseOptions, {
       logger,
+      runId: TEST_RUN_ID,
+      telemetry: createFakeTelemetry(),
       parser,
       fileSystem,
       createLlmClient: () => {
@@ -78,7 +94,14 @@ describe('runRefactorCommand', () => {
     await runRefactorCommand(
       FIXTURE_PATH,
       { ...baseOptions, maxTokens: 'no-es-un-numero' },
-      { logger, parser, fileSystem, createLlmClient: () => llm },
+      {
+        logger,
+        runId: TEST_RUN_ID,
+        telemetry: createFakeTelemetry(),
+        parser,
+        fileSystem,
+        createLlmClient: () => llm,
+      },
     );
 
     expect(process.exitCode).toBe(1);

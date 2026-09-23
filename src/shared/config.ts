@@ -22,6 +22,8 @@ const EnvSchema = z.object({
   ANTHROPIC_RETRY_MAX_DELAY_MS: z.coerce.number().int().min(0).default(8000),
   /** Intervalo mínimo entre requests salientes a Claude, para no exceder el límite de RPM de la cuenta. */
   ANTHROPIC_MIN_REQUEST_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
+  /** Endpoint OTLP/HTTP para exportar traces (estándar OpenTelemetry). Sin configurar, no se exporta telemetría a ningún lado. */
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
 });
 
 function parseEnv() {
@@ -46,6 +48,9 @@ export const config = {
     retryInitialDelayMs: env.ANTHROPIC_RETRY_INITIAL_DELAY_MS,
     retryMaxDelayMs: env.ANTHROPIC_RETRY_MAX_DELAY_MS,
     minRequestIntervalMs: env.ANTHROPIC_MIN_REQUEST_INTERVAL_MS,
+  },
+  otel: {
+    exporterEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
   },
 } as const;
 

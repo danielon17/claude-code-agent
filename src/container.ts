@@ -4,6 +4,7 @@ import { config, type AppConfig } from './shared/config.js';
 import { logger as baseLogger, type Logger } from './shared/logger.js';
 import { ConfigurationError } from './shared/errors.js';
 import { RateLimiter } from './shared/rateLimiter.js';
+import { createTelemetry, type Telemetry } from './shared/telemetry.js';
 import { TsCompilerParser } from './infrastructure/parsing/TsCompilerParser.js';
 import { AnthropicClient } from './infrastructure/llm/AnthropicClient.js';
 import { NodeFileSystem } from './infrastructure/filesystem/NodeFileSystem.js';
@@ -17,10 +18,10 @@ import type { FileSystemPort } from './core/ports/FileSystem.port.js';
  * CLI obtienen sus dependencias de aquí en vez de instanciarlas ellos
  * mismos, para mantener la capa de interfaz desacoplada de infraestructura.
  *
- * Cada invocación de `createContainer()` genera un `runId` corto y lo
- * adjunta a todas las líneas de log de esa ejecución (`logger.child`), para
- * poder correlacionar el output de una corrida del CLI en un log agregado
- * (útil si se usa en CI o se redirige `--log-level` a un colector).
+ * Cada invocación de `createContainer()` genera un `runId` corto que se
+ * adjunta a todas las líneas de log de esa ejecución (`logger.child`) y a
+ * los spans de `telemetry`, para poder correlacionar logs y traces de la
+ * misma corrida en un backend agregado.
  *
  * `createLlmClient` es perezoso (no un valor ya construido) a propósito:
  * validar `ANTHROPIC_API_KEY` recién cuando un comando realmente necesita
@@ -30,6 +31,8 @@ import type { FileSystemPort } from './core/ports/FileSystem.port.js';
 export interface AppContainer {
   config: AppConfig;
   logger: Logger;
+  runId: string;
+  telemetry: Telemetry;
   parser: CodeParser;
   fileSystem: FileSystemPort;
   createLlmClient: () => LlmClient;
@@ -38,10 +41,13 @@ export interface AppContainer {
 export function createContainer(): AppContainer {
   const runId = randomUUID().slice(0, 8);
   const logger = baseLogger.child({ runId });
+  const telemetry = createTelemetry({ exporterEndpoint: config.otel.exporterEndpoint });
 
   return {
     config,
     logger,
+    runId,
+    telemetry,
     parser: new TsCompilerParser(),
     fileSystem: new NodeFileSystem(),
     createLlmClient: () => {

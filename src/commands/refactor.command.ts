@@ -14,7 +14,7 @@ export interface RefactorCliOptions {
   maxTokens: string;
 }
 
-type RefactorCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSystem' | 'createLlmClient'>;
+type RefactorCommandDeps = Pick<AppContainer, 'logger' | 'runId' | 'telemetry' | 'parser' | 'fileSystem' | 'createLlmClient'>;
 
 /**
  * Lógica del subcomando `refactor`, separada del registro en Commander
@@ -25,43 +25,49 @@ type RefactorCommandDeps = Pick<AppContainer, 'logger' | 'parser' | 'fileSystem'
 export async function runRefactorCommand(
   target: string,
   options: RefactorCliOptions,
-  { logger, parser, fileSystem, createLlmClient }: RefactorCommandDeps,
+  { logger, runId, telemetry, parser, fileSystem, createLlmClient }: RefactorCommandDeps,
 ): Promise<void> {
   try {
-    const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
-    if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
-      throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
-    }
+    await telemetry.withSpan(
+      'cli.refactor',
+      async () => {
+        const maxTokensPerChunk = Number.parseInt(options.maxTokens, 10);
+        if (!Number.isFinite(maxTokensPerChunk) || maxTokensPerChunk <= 0) {
+          throw new RangeError(`--max-tokens debe ser un entero positivo, recibido: "${options.maxTokens}"`);
+        }
 
-    const useCase = new RefactorCodeUseCase(parser, createLlmClient(), fileSystem);
-    logger.info({ target, apply: options.apply }, 'Generando sugerencias de refactor con Claude');
+        const useCase = new RefactorCodeUseCase(parser, createLlmClient(), fileSystem);
+        logger.info({ target, apply: options.apply }, 'Generando sugerencias de refactor con Claude');
 
-    const result = await useCase.execute({
-      targetPath: target,
-      apply: options.apply,
-      includePatterns: options.include,
-      excludePatterns: options.exclude,
-      maxTokensPerChunk,
-      onProgress: (message) => logger.info(message),
-      onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
-    });
+        const result = await useCase.execute({
+          targetPath: target,
+          apply: options.apply,
+          includePatterns: options.include,
+          excludePatterns: options.exclude,
+          maxTokensPerChunk,
+          onProgress: (message) => logger.info(message),
+          onToken: options.format === 'text' ? (text) => process.stdout.write(text) : undefined,
+        });
 
-    const formatted = createFormatter(options.format).formatRefactorSuggestions(result.suggestions);
-    if (options.output) {
-      await fileSystem.writeFile(options.output, formatted);
-      logger.info(`Resultado guardado en ${options.output}`);
-    } else {
-      const separator = options.format === 'text' ? '\n\n' : '';
-      process.stdout.write(`${separator}${formatted}\n`);
-    }
+        const formatted = createFormatter(options.format).formatRefactorSuggestions(result.suggestions);
+        if (options.output) {
+          await fileSystem.writeFile(options.output, formatted);
+          logger.info(`Resultado guardado en ${options.output}`);
+        } else {
+          const separator = options.format === 'text' ? '\n\n' : '';
+          process.stdout.write(`${separator}${formatted}\n`);
+        }
 
-    if (result.suggestions.length === 0) {
-      return;
-    }
-    logger.info(
-      options.apply
-        ? `${result.appliedCount} refactor(s) aplicado(s) directamente sobre los archivos de origen.`
-        : `${result.suggestions.length} sugerencia(s) generada(s) en modo dry-run. Usá --apply para escribirlas.`,
+        if (result.suggestions.length === 0) {
+          return;
+        }
+        logger.info(
+          options.apply
+            ? `${result.appliedCount} refactor(s) aplicado(s) directamente sobre los archivos de origen.`
+            : `${result.suggestions.length} sugerencia(s) generada(s) en modo dry-run. Usá --apply para escribirlas.`,
+        );
+      },
+      { 'run.id': runId, 'cli.target': target, 'cli.format': options.format, 'cli.apply': options.apply },
     );
   } catch (error) {
     if (isAppError(error)) {
@@ -70,10 +76,12 @@ export async function runRefactorCommand(
       logger.error({ err: error }, 'Error inesperado durante la refactorización');
     }
     process.exitCode = 1;
+  } finally {
+    await telemetry.shutdown();
   }
 }
 
-export function registerRefactorCommand(program: Command): void {
+export function registerRefactorCommand(program: Command, containerFactory: () => AppContainer = createContainer): void {
   program
     .command('refactor')
     .description('Genera parches (.diff) de refactorización sugeridos por Claude para un archivo o directorio.')
@@ -85,6 +93,6 @@ export function registerRefactorCommand(program: Command): void {
     .option('--exclude <patterns...>', 'Glob patterns a excluir (ej: "**/*.test.ts")')
     .option('--max-tokens <number>', 'Límite de tokens por chunk enviado al modelo', '4000')
     .action(async (target: string, options: RefactorCliOptions) => {
-      await runRefactorCommand(target, options, createContainer());
+      await runRefactorCommand(target, options, containerFactory());
     });
 }

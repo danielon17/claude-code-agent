@@ -3,6 +3,14 @@ import type { LlmClient, LlmCompletionOptions, LlmMessage } from '../../src/core
 import type { FileSystemPort } from '../../src/core/ports/FileSystem.port.js';
 import type { CodeUnit, CodeUnitKind } from '../../src/core/entities/CodeUnit.js';
 import { FileSystemError } from '../../src/shared/errors.js';
+import { createTelemetry, type Telemetry } from '../../src/shared/telemetry.js';
+
+export const TEST_RUN_ID = 'test-run';
+
+/** Telemetry real sin exporter configurado: crea spans de verdad (verificables con un InMemorySpanExporter propio si hace falta) pero no los envía a ningún colector externo. */
+export function createFakeTelemetry(): Telemetry {
+  return createTelemetry();
+}
 
 export function makeCodeUnit(overrides: Partial<CodeUnit> & { name: string }): CodeUnit {
   return {
